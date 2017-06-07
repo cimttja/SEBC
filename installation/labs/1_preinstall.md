@@ -1,6 +1,9 @@
 ```{r, engine='bash',  System Configuration Checks}
+[ec2-user@ip-172-31-7-21 ~]$ sudo sysctl -w net.ipv4.icmp_echo_ignore_all=0
+[ec2-user@ip-172-31-7-21 ~]$ sudo sysctl vm.swappiness=10
+[ec2-user@ip-172-31-7-21 ~]$ sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
 [ec2-user@ip-172-31-7-21 ~]$ sudo vi /etc/sysctl.conf
-vm.swappines = 1
+vm.swappines = 10
 [ec2-user@ip-172-31-7-21 ~]$ findmnt
 TARGET                           SOURCE      FSTYPE      OPTIONS
 /                                /dev/xvda2  xfs         rw,relatime,seclabel,attr2,inode64,noquota
@@ -83,7 +86,7 @@ lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
         TX packets 4  bytes 340 (340.0 B)
         TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
 
-[root@ip-172-31-7-21 ~]# yum install nscd bind-utils ntp -y
+[root@ip-172-31-7-21 ~]# yum install nscd bind-utils ntp wget install mariadb-server vim -y
 [root@ip-172-31-7-21 ~]# getent hosts
 127.0.0.1       localhost localhost.localdomain localhost4 localhost4.localdomain4
 127.0.0.1       localhost localhost.localdomain localhost6 localhost6.localdomain6
@@ -311,8 +314,24 @@ Bye
 [ec2-user@ip-172-31-15-237 ~]$
 --
 
---on Master
+--on EC2
 
+https://stackoverflow.com/questions/9766014/connect-to-mysql-on-amazon-ec2-from-a-remote-server
+
+There could be one of the following reasons:
+
+You need make an entry in the Amazon Security Group to allow remote access from your machine to Amazon EC2 instance. :- I believe this is done by you as from your question it seems like you already made an entry with 0.0.0.0, which allows everybody to access the machine.
+
+MySQL not allowing user to connect from remote machine:- By default MySql creates root user id with admin access. But root id's access is limited to localhost only. This means that root user id with correct password will not work if you try to access MySql from a remote machine. To solve this problem, you need to allow either the root user or some other DB user to access MySQL from remote machine. I would not recommend allowing root user id accessing DB from remote machine. You can use wildcard character % to specify any remote machine.
+
+Check if machine's local firewall is not enabled. And if its enabled then make sure that port 3306 is open.
+
+
+--on Master
+mysql> SHOW MASTER STATUS;
+mysql> GRANT REPLICATION SLAVE ON *.* TO 'user'@'FQDN' IDENTIFIED BY 'password';
+mysql> SET GLOBAL binlog_format = 'ROW';
+mysql> FLUSH TABLES WITH READ LOCK;
 
 --on REPL
 stop SLAVE;
@@ -321,4 +340,297 @@ START SLAVE;
 SHOW SLAVE STATUS \G
 --
 
+```
+```{r, engine='bash',  install CDH 5.8.3}
+https://www.cloudera.com/documentation/enterprise/release-notes/topics/cdh_vd_cdh_download_58.html#cdh583
+
+copy repo to /etc/yum.repos.d/ 
+https://www.cloudera.com/documentation/enterprise/5-8-x/topics/cm_ig_install_path_b.html#concept_qyv_bt1_v5
+
+
+[ec2-user@ip-172-31-7-21 yum.repos.d]$ sudo vi cloudera-manager.repo
+[ec2-user@ip-172-31-7-21 yum.repos.d]$ sudo cat cloudera-manager.repo                                                [cloudera-manager]
+# Packages for Cloudera Manager, Version 5, on RedHat or CentOS 7 x86_64
+name=Cloudera Manager
+#baseurl=https://archive.cloudera.com/cm5/redhat/7/x86_64/cm/5/
+baseurl=https://archive.cloudera.com/cm5/redhat/7/x86_64/cm/5.8.3/
+gpgkey =https://archive.cloudera.com/cm5/redhat/7/x86_64/cm/RPM-GPG-KEY-cloudera
+gpgcheck = 1
+
+[ec2-user@ip-172-31-7-21 yum.repos.d]$ sudo yum clean all
+[ec2-user@ip-172-31-7-21 yum.repos.d]$ sudo yum install cloudera-manager-agent -y 
+[ec2-user@ip-172-31-7-21 yum.repos.d]$ sudo yum install cloudera-manager-daemons cloudera-manager-server -y
+Starting cloudera-scm-agent (via systemctl):               [  OK  ]
+
+#Disable SELinux Temporarily
+#To disable SELinux temporarily, issue the command below as root:
+echo 0 > /selinux/enforce
+#Alternatively, you can use the setenforce tool as follows:
+setenforce 0
+#Else, use the Permissive option instead of 0 as below:
+setenforce Permissive
+
+[root@ip-172-31-8-243 yum.repos.d]# sestatus
+
+[root@ip-172-31-8-243 share]  sudo mkdir -p /usr/share/java/
+[root@ip-172-31-8-243 share]# sudo cp ~/mysql-connector-java-5.1.42/mysql-connector-java-5.1.42-bin.jar /usr/share/java/mysql-connector-java.jar
+
+[root@ip-172-31-8-243 share]# mysql -u root -p
+Enter password:
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 7
+Server version: 5.5.52-MariaDB MariaDB Server
+
+Copyright (c) 2000, 2016, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [(none)]> CREATE DATABASE cmserver DEFAULT CHARACTER SET utf8;
+Query OK, 1 row affected (0.00 sec)
+
+MariaDB [(none)]> GRANT ALL on cmserver.* TO 'cmserveruser'@'%' IDENTIFIED BY 'password';
+Query OK, 0 rows affected (0.00 sec)
+
+MariaDB [(none)]> CREATE DATABASE metastore DEFAULT CHARACTER SET utf8;
+Query OK, 1 row affected (0.00 sec)
+
+MariaDB [(none)]> CREATE DATABASE hive DEFAULT CHARACTER SET utf8;
+Query OK, 1 row affected (0.00 sec)
+
+MariaDB [(none)]> GRANT ALL on metastore.* TO 'hiveuser'@'%' IDENTIFIED BY 'password';
+Query OK, 0 rows affected (0.00 sec)
+
+MariaDB [(none)]>
+MariaDB [(none)]> CREATE DATABASE amon DEFAULT CHARACTER SET utf8;
+Query OK, 1 row affected (0.00 sec)
+
+MariaDB [(none)]> GRANT ALL on amon.* TO 'amonuser'@'%' IDENTIFIED BY 'password';
+Query OK, 0 rows affected (0.00 sec)
+
+MariaDB [(none)]>
+MariaDB [(none)]> CREATE DATABASE rman DEFAULT CHARACTER SET utf8;
+Query OK, 1 row affected (0.00 sec)
+
+MariaDB [(none)]> GRANT ALL on rman.* TO 'rmanuser'@'%' IDENTIFIED BY 'password';
+Query OK, 0 rows affected (0.00 sec)
+
+MariaDB [(none)]>
+MariaDB [(none)]> CREATE DATABASE oozie DEFAULT CHARACTER SET utf8;
+Query OK, 1 row affected (0.00 sec)
+
+MariaDB [(none)]> GRANT ALL on oozie.* TO 'oozieuser'@'%' IDENTIFIED BY 'password';
+Query OK, 0 rows affected (0.00 sec)
+
+MariaDB [(none)]>
+MariaDB [(none)]> CREATE DATABASE hue DEFAULT CHARACTER SET utf8;
+Query OK, 1 row affected (0.00 sec)
+
+MariaDB [(none)]> GRANT ALL on hue.* TO 'hueuser'@'%' IDENTIFIED BY 'password';
+Query OK, 0 rows affected (0.00 sec)
+
+MariaDB [(none)]> exit
+Bye
+
+[root@ip-172-31-8-243 share]# sudo /usr/share/cmf/schema/scm_prepare_database.sh mysql cmserver cmserveruser password
+JAVA_HOME=/usr/java/jdk1.7.0_60
+Verifying that we can write to /etc/cloudera-scm-server
+Creating SCM configuration file in /etc/cloudera-scm-server
+Executing:  /usr/java/jdk1.7.0_60/bin/java -cp /usr/share/java/mysql-connector-java.jar:/usr/share/java/oracle-connector-java.jar:/usr/share/cmf/schema/../lib/* com.cloudera.enterprise.dbutil.DbCommandExecutor /etc/cloudera-scm-server/db.properties com.cloudera.cmf.db.
+[                          main] DbCommandExecutor              INFO  Successfully connected to database.
+All done, your SCM database is configured correctly!
+[ec2-user@ip-172-31-7-21 ~]$  sudo service cloudera-scm-agent start
+[root@ip-172-31-8-243 share]# sudo service cloudera-scm-server start
+
+--> Ports
+
+--> http://52.59.196.39:7180/
+```
+```{r, engine='bash',  lokal repo}
+[root@ip-172-31-8-243 ~]# mkdir /var/www/html/cdh5.8.3
+[root@ip-172-31-8-243 ~]# cd /var/www/html/cdh5.8.3
+[root@ip-172-31-8-243 cdh5.8.3]# wget http://archive.cloudera.com/cdh5/parcels/5.8.3/manifest.json
+--2017-06-06 10:21:55--  http://archive.cloudera.com/cdh5/parcels/5.8.3/manifest.json
+Resolving archive.cloudera.com (archive.cloudera.com)... 151.101.12.167
+Connecting to archive.cloudera.com (archive.cloudera.com)|151.101.12.167|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 63718 (62K) [application/json]
+Saving to: ‘manifest.json’
+
+100%[===================================================================================================================================================================================================>] 63,718      --.-K/s   in 0.08s
+
+2017-06-06 10:21:55 (785 KB/s) - ‘manifest.json’ saved [63718/63718]
+
+[root@ip-172-31-8-243 cdh5.8.3]# wget http://archive.cloudera.com/cdh5/parcels/5.8.3/CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel
+--2017-06-06 10:22:13--  http://archive.cloudera.com/cdh5/parcels/5.8.3/CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel
+Resolving archive.cloudera.com (archive.cloudera.com)... 151.101.12.167
+Connecting to archive.cloudera.com (archive.cloudera.com)|151.101.12.167|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 1479696719 (1.4G)
+Saving to: ‘CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel’
+
+34% [==================================================================>                                                                                                                                 ] 509,178,865 39.0MB/s  eta 19s    g37% [=========================================================================>                                                                                                                          ] 560,389,261 36.2MB/s  eta 18s    h100%[=================================================================================================================================================================================================>] 1,479,696,719 45.2MB/s   in 29s
+
+2017-06-06 10:22:42 (48.8 MB/s) - ‘CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel’ saved [1479696719/1479696719]
+
+[root@ip-172-31-8-243 cdh5.8.3]# wget http://archive.cloudera.com/cdh5/parcels/5.8.3/CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel.sha1
+--2017-06-06 10:23:24--  http://archive.cloudera.com/cdh5/parcels/5.8.3/CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel.sha1
+Resolving archive.cloudera.com (archive.cloudera.com)... 151.101.12.167
+Connecting to archive.cloudera.com (archive.cloudera.com)|151.101.12.167|:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 41 [application/x-sha1]
+Saving to: ‘CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel.sha1’
+
+100%[===================================================================================================================================================================================================>] 41          --.-K/s   in 0s
+
+2017-06-06 10:23:24 (7.27 MB/s) - ‘CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel.sha1’ saved [41/41]
+
+[root@ip-172-31-8-243 cdh5.8.3]# ls -la
+total 1445092
+drwxr-xr-x. 2 root root       4096 Jun  6 10:23 .
+drwxr-xr-x. 3 root root         21 Jun  6 10:21 ..
+-rw-r--r--. 1 root root 1479696719 Oct 27  2016 CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel
+-rw-r--r--. 1 root root         41 Oct 27  2016 CDH-5.8.3-1.cdh5.8.3.p0.2-el7.parcel.sha1
+-rw-r--r--. 1 root root      63718 Oct 27  2016 manifest.json
+[root@ip-172-31-8-243 cdh5.8.3]# chmod -R ugo+rX /var/www/html/cdh5.8.3/
+[root@ip-172-31-8-243 cdh5.8.3]# systemctl status httpd
+? httpd.service - The Apache HTTP Server
+   Loaded: loaded (/usr/lib/systemd/system/httpd.service; disabled; vendor preset: disabled)
+   Active: inactive (dead)
+     Docs: man:httpd(8)
+           man:apachectl(8)
+[root@ip-172-31-8-243 cdh5.8.3]# systemctl start httpd
+[root@ip-172-31-8-243 cdh5.8.3]# systemctl status httpd
+? httpd.service - The Apache HTTP Server
+   Loaded: loaded (/usr/lib/systemd/system/httpd.service; disabled; vendor preset: disabled)
+   Active: active (running) since Tue 2017-06-06 10:26:21 EDT; 1s ago
+     Docs: man:httpd(8)
+           man:apachectl(8)
+ Main PID: 29697 (httpd)
+   Status: "Processing requests..."
+   CGroup: /system.slice/httpd.service
+           +-29697 /usr/sbin/httpd -DFOREGROUND
+           +-29698 /usr/sbin/httpd -DFOREGROUND
+           +-29699 /usr/sbin/httpd -DFOREGROUND
+           +-29700 /usr/sbin/httpd -DFOREGROUND
+           +-29701 /usr/sbin/httpd -DFOREGROUND
+           +-29702 /usr/sbin/httpd -DFOREGROUND
+
+Jun 06 10:26:21 ip-172-31-8-243.eu-central-1.compute.internal systemd[1]: Starting The Apache HTTP Server...
+Jun 06 10:26:21 ip-172-31-8-243.eu-central-1.compute.internal systemd[1]: Started The Apache HTTP Server.
+[root@ip-172-31-8-243 cdh5.8.3]# systemctl status httpd
+? httpd.service - The Apache HTTP Server
+   Loaded: loaded (/usr/lib/systemd/system/httpd.service; disabled; vendor preset: disabled)
+   Active: active (running) since Tue 2017-06-06 10:26:21 EDT; 13s ago
+     Docs: man:httpd(8)
+           man:apachectl(8)
+ Main PID: 29697 (httpd)
+   Status: "Total requests: 1; Current requests/sec: 0.111; Current traffic:   0 B/sec"
+   CGroup: /system.slice/httpd.service
+           +-29697 /usr/sbin/httpd -DFOREGROUND
+           +-29698 /usr/sbin/httpd -DFOREGROUND
+           +-29699 /usr/sbin/httpd -DFOREGROUND
+           +-29700 /usr/sbin/httpd -DFOREGROUND
+           +-29701 /usr/sbin/httpd -DFOREGROUND
+           +-29702 /usr/sbin/httpd -DFOREGROUND
+           +-29705 /usr/sbin/httpd -DFOREGROUND
+           +-29707 /usr/sbin/httpd -DFOREGROUND
+
+Jun 06 10:26:21 ip-172-31-8-243.eu-central-1.compute.internal systemd[1]: Starting The Apache HTTP Server...
+Jun 06 10:26:21 ip-172-31-8-243.eu-central-1.compute.internal systemd[1]: Started The Apache HTTP Server.
+[root@ip-172-31-8-243 cdh5.8.3]#
+
+CREATE USER 'amonuser'@'aws1' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'aws2' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'aws3' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'aws4' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'aws5' IDENTIFIED BY 'password';
+
+CREATE USER 'rmanuser'@'aws1' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'aws2' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'aws3' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'aws4' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'aws5' IDENTIFIED BY 'password';
+
+CREATE USER 'oozieuser'@'aws1' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'aws2' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'aws3' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'aws4' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'aws5' IDENTIFIED BY 'password';
+
+CREATE USER 'hiveuser'@'aws1' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'aws2' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'aws3' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'aws4' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'aws5' IDENTIFIED BY 'password';
+
+CREATE USER 'hueuser'@'aws1' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'aws2' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'aws3' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'aws4' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'aws5' IDENTIFIED BY 'password';
+
+##--------------
+
+CREATE USER 'amonuser'@'ec2-52-59-196-39.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'ec2-54-93-222-31.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'ec2-54-93-119-59.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'ec2-52-59-237-208.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'ec2-52-59-246-54.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+
+CREATE USER 'rmanuser'@'ec2-52-59-196-39.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'ec2-54-93-222-31.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'ec2-54-93-119-59.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'ec2-52-59-237-208.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'ec2-52-59-246-54.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+
+CREATE USER 'oozieuser'@'ec2-52-59-196-39.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'ec2-54-93-222-31.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'ec2-54-93-119-59.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'ec2-52-59-237-208.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'ec2-52-59-246-54.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+
+CREATE USER 'hiveuser'@'ec2-52-59-196-39.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'ec2-54-93-222-31.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'ec2-54-93-119-59.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'ec2-52-59-237-208.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'ec2-52-59-246-54.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+
+CREATE USER 'hueuser'@'ec2-52-59-196-39.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'ec2-54-93-222-31.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'ec2-54-93-119-59.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'ec2-52-59-237-208.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'ec2-52-59-246-54.eu-central-1.compute.amazonaws.com' IDENTIFIED BY 'password';
+
+
+##--------------
+
+CREATE USER 'amonuser'@'52.59.196.39' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'54.93.222.31' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'54.93.119.59' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'52.59.237.208' IDENTIFIED BY 'password';
+CREATE USER 'amonuser'@'52.59.246.54' IDENTIFIED BY 'password';
+
+CREATE USER 'rmanuser'@'52.59.196.39' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'54.93.222.31' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'54.93.119.59' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'52.59.237.208' IDENTIFIED BY 'password';
+CREATE USER 'rmanuser'@'52.59.246.54' IDENTIFIED BY 'password';
+
+CREATE USER 'oozieuser'@'52.59.196.39' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'54.93.222.31' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'54.93.119.59' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'52.59.237.208' IDENTIFIED BY 'password';
+CREATE USER 'oozieuser'@'52.59.246.54' IDENTIFIED BY 'password';
+
+CREATE USER 'hiveuser'@'52.59.196.39' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'54.93.222.31' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'54.93.119.59' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'52.59.237.208' IDENTIFIED BY 'password';
+CREATE USER 'hiveuser'@'52.59.246.54' IDENTIFIED BY 'password';
+
+CREATE USER 'hueuser'@'52.59.196.39' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'54.93.222.31' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'54.93.119.59' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'52.59.237.208' IDENTIFIED BY 'password';
+CREATE USER 'hueuser'@'52.59.246.54' IDENTIFIED BY 'password';
 ```
