@@ -1,0 +1,41 @@
+1)
+	Client mit auf dem Server installieren
+
+2)
+	#> [logging]
+	#>  default = FILE:/var/log/krb5libs.log
+	#>  kdc = FILE:/var/log/krb5kdc.log
+	#>  admin_server = FILE:/var/log/kadmind.log
+	#> 
+	#> [libdefaults]
+	#>  default_realm = JASZOK.DE
+	#>  dns_lookup_realm = false
+	#>  dns_lookup_kdc = false
+	#>  ticket_lifetime = 24h
+	#>  renew_lifetime = 7d
+	#>  forwardable = true
+	#>  udp_preference_limit = 1
+	#>  default_tgs_enctypes = arcfour-hmac
+	#>  default_tkt_enctypes = arcfour-hmac 
+	#> 
+	#> [realms] 
+	#> #PUNEETHA.COM = {
+	#> #  kdc = host1.example.com
+	#> #  admin_server = host1.example.com
+	#> #}
+	#>	JASZOK.DE = {
+	#>    kdc = ec2-52-59-196-39.eu-central-1.compute.amazonaws.com
+	#>    admin_server = ec2-52-59-196-39.eu-central-1.compute.amazonaws.com 
+	#>    }
+	#> 
+	#>  [domain_realm]
+	#>    .example.com = JASZOK.DE
+	#>    example.com = JASZOK.DE
+   
+
+3)
+"Step 3:" => auch auf dem Server ausführen!s
+
+5)
+#kadmin.local delete_principal cloudera-scm@PUNEETHA.COM
+kadmin.local addprinc cloudera-scm@JASZOK.DE
